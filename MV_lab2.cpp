@@ -6,10 +6,16 @@ using namespace std;
 //прототип функции cgemv из BLAS для умножения матрицы на вектор
 //y = alpha * A * x + beta * y
 extern "C" void cgemv_(const char* trans, const int* m, const int* n,
-    const complex<float> *alpha, const std::complex<float> *A,
-    const int* lda, const std::complex<float> *x,
-    const int* incx, const std::complex<float> *beta,
-    std::complex<float> *y, const int* incy);
+    const complex<float> *alpha, const complex<float> *A,
+    const int* lda, const complex<float> *x,
+    const int* incx, const complex<float> *beta,
+    complex<float> *y, const int* incy);
+
+//прототип функции caxpy из BLAS для сложения векторов
+//y = alpha * x + y
+extern "C" void caxpy_(const int* n, const complex<float>*alpha,
+    const complex<float>*x, const int* incx,
+    complex<float>*y, const int* incy);
 
 int main() {
     setlocale(LC_ALL, "rus");
@@ -45,6 +51,16 @@ int main() {
 
     // Вывод результата
     cout << "Результат умножения комплексной матрицы на комплексный вектор (x = A * b):\n";
+    for (const auto& val : x) {
+        cout << val.real() << " + (" << val.imag() << ") * i\n";
+    }
+    cout << endl;
+
+    //умножение матрицы A на вектор b: x = alpha * A * b + beta * x
+    caxpy_(&n, &alpha, b.data(), &incb, x.data(), &incx);
+
+    // Вывод результата
+    cout << "Результат сложения векторов b и x (x = b + x):\n";
     for (const auto& val : x) {
         cout << val.real() << " + (" << val.imag() << ") * i\n";
     }
