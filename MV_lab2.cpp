@@ -1,4 +1,5 @@
 ﻿#include <iostream>
+#include <fstream>
 #include <complex>
 #include <vector>
 using namespace std;
@@ -17,6 +18,9 @@ extern "C" void zaxpy_(const int* n, const complex<double>*alpha,
     const complex<double>*x, const int* incx,
     complex<double>*y, const int* incy);
 
+//прототип функции zscal из BLAS для умножения вектора на скаляр
+extern "C" void zscal_(const int* n, const complex<double>*alpha, complex<double>*x, const int* incx);
+
 //прототип функции zgeev из LAPACK для вычисления собственных значений, собственных векторов
 extern "C" void zgeev_(const char* jobvl, const char* jobvr, const int* n,
     complex<double>*a, const int* lda,
@@ -24,26 +28,82 @@ extern "C" void zgeev_(const char* jobvl, const char* jobvr, const int* n,
     complex<double>*vr, const int* ldvr, complex<double>*work,
     const int* lwork, double* rwork, int* info);
 
+void findEigen(complex<double>* A, const int* n, complex<double>* w, complex<double>* vl, complex<double>* vr)
+{
+    //параметры для функции zgeev (поиск собственных значений и векторов)
+    const char jobvl = 'V';  //вычислять левые собственные векторы
+    const char jobvr = 'V';  //вычислять правые собственные векторы
+
+    //рабочие массивы
+    int lwork = 2 * (*n); //размер рабочего массива
+    vector<complex<double>> work(lwork);
+    vector<double> rwork(lwork);
+
+    int info;
+
+    //поиск собственных значений и собственных векторов
+    zgeev_(&jobvl, &jobvr, n, A, n, w, vl, n, vr, n, work.data(), &lwork, rwork.data(), &info);
+
+    if (info != 0)
+    {
+        cerr << "Ошибка в zgeev, код: " << info << endl;
+    }
+}
+
+//функция для чтения матрицы и вектора из файла
+void readFile(int& n, vector<complex<double>>& matrix, vector<complex<double>>& vect) {
+    ifstream f("input.txt");
+
+    if (!f.is_open()) {
+        cerr << "Не удалось открыть файл!" << endl;
+        return;
+    }
+
+    f >> n;
+
+    matrix.resize(n * n);
+    vect.resize(n);
+
+    for (int i = 0; i < n * n; ++i) {
+        double real, imag;
+        f >> real >> imag;
+        matrix[i] = complex<double>(real, imag);
+    }
+
+    for (int i = 0; i < n; ++i) {
+        double real, imag;
+        f >> real >> imag;
+        vect[i] = std::complex<double>(real, imag);
+    }
+
+    f.close();
+
+    vector<complex<double>> transposed(n*n);
+
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
+            transposed[j * n + i] = matrix[i * n + j];
+        }
+    }
+
+    matrix = transposed;
+}
+
 int main() {
     setlocale(LC_ALL, "rus");
 
-    int m = 3; //количество строк
-    int n = 3; //количество столбцов
+    int n;
 
     //матрица A
-    vector<complex<double>> A = {
-        {1.0f, 2.0f}, {3.0f, 4.0f}, {5.0f, 6.0f}, //первый столбец
-        {7.0f, 8.0f}, {9.0f, 10.0f}, {11.0f, 12.0f},
-        {13.0f, 14.0f}, {15.0f, 16.0f}, {17.0f, 18.0f}
-    };
+    vector<complex<double>> A;
 
     //вектор b
-    vector<complex<double>> b = {
-        {1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}
-    };
+    vector<complex<double>> b;
+
+    readFile(n, A, b);
 
     //вектор x (результат)
-    vector<complex<double>> x(m, { 0.0f, 0.0f });
+    vector<complex<double>> x(n, { 0.0f, 0.0f });
 
     //параметры для функции cgemv (умножение комплексной матрицы на комплексный вектор)
     const char trans = 'N'; //не транспонировать
@@ -54,7 +114,7 @@ int main() {
     const int incx = 1;       //шаг между элементами вектора x
 
     //умножение матрицы A на вектор b: x = alpha * A * b + beta * x
-    zgemv_(&trans, &m, &n, &alpha, A.data(), &lda, b.data(), &incb, &beta, x.data(), &incx);
+    zgemv_(&trans, &n, &n, &alpha, A.data(), &lda, b.data(), &incb, &beta, x.data(), &incx);
 
     // Вывод результата
     cout << "Результат умножения комплексной матрицы на комплексный вектор (x = A * b):\n";
@@ -73,54 +133,66 @@ int main() {
     }
     cout << endl;
 
-    //параметры для функции zgeev (поиск собственных значений и векторов)
-    const char jobvl = 'V';  //вычислять левые собственные векторы
-    const char jobvr = 'V';  //вычислять левые собственные векторы
-
     vector<complex<double>> w(n); //собственные значения
 
     vector<complex<double>> vl(n * n); //левые собственные векторы
     vector<complex<double>> vr(n * n); //правые собственные векторы
 
-    //рабочие массивы
-    vector<complex<double>> work(2 * n);
-    vector<double> rwork(2 * n);
-    int lwork = 2 * n; //размер рабочего массива
+    findEigen(A.data(), &n, w.data(), vl.data(), vr.data());
 
-    int info;
-
-    //поиск собственных значений и собственных векторов
-    zgeev_(&jobvl, &jobvr, &n, A.data(), &lda, w.data(), vl.data(), &n, vr.data(), &n, work.data(), &lwork, rwork.data(), &info);
-
-    if (info == 0) {
-        cout << "Собственные значения:\n";
-        for (int i = 0; i < n; ++i) {
-            cout << "lambda_" << i + 1 << " = " << w[i] << endl;
-        }
-
-        // Вывод правых собственных векторов
-        cout << "\nПравые собственные векторы:\n";
-        for (int i = 0; i < n; ++i) {
-            cout << "v_" << i + 1 << " = [";
-            for (int j = 0; j < n; ++j) {
-                cout << vr[j + i * n]; // Правый собственный вектор хранится по столбцам
-                if (j != n - 1) cout << ", ";
-            }
-            cout << "]" << endl;
-        }
-
-        cout << "\nЛевые собственные векторы:\n";
-        for (int i = 0; i < n; ++i) {
-            cout << "v_" << i + 1 << " = [";
-            for (int j = 0; j < n; ++j) {
-                cout << vl[j + i * n];
-                if (j != n - 1) cout << ", ";
-            }
-            cout << "]" << endl;
-        }
+    cout << "Собственные значения:\n";
+    for (int i = 0; i < n; ++i) {
+        cout << "lambda_" << i + 1 << " = " << w[i] << endl;
     }
-    else {
-        cerr << "Ошибка в zgeev, код: " << info << endl;
+
+    cout << "\nПравые собственные векторы:\n";
+    for (int i = 0; i < n; ++i) {
+        cout << "v_" << i + 1 << " = [";
+        for (int j = 0; j < n; ++j) {
+            cout << vr[i * n + j]; //хранится по столбцам
+            if (j != n - 1) cout << ", ";
+        }
+        cout << "]" << endl;
+    }
+
+    cout << "\nЛевые собственные векторы:\n";
+    for (int i = 0; i < n; ++i) {
+        cout << "vl_" << i + 1 << " = [";
+        for (int j = 0; j < n; ++j) {
+            cout << vl[i * n + j];
+            if (j != n - 1) cout << ", ";
+        }
+        cout << "]" << endl;
+    }
+
+    cout << "\n\nПроверка\n";
+    for (int i = 0; i < n; ++i) {
+        vector<complex<double>> vect(n);
+
+        for (int j = 0; j < n; j++)
+        {
+            vect[j] = vr[i * n + j];
+        }
+
+        //умножение матрицы A на вектор vect: x = alpha * A * vect + beta * x
+        zgemv_(&trans, &n, &n, &alpha, A.data(), &lda, vect.data(), &incb, &beta, x.data(), &incx);
+
+        // Вывод результата
+        cout << "A * v_" << i + 1 << ":\n";
+        for (const auto& val : x) {
+            cout << val.real() << " + (" << val.imag() << ") * i\n";
+        }
+        cout << endl;
+
+
+        zscal_(&n, &(w[i]), vect.data(), &incx);
+
+        // Вывод результата
+        cout << "lambda_" << i + 1 << " * v_" << i + 1 << ":\n";
+        for (const auto& val : x) {
+            cout << val.real() << " + (" << val.imag() << ") * i\n";
+        }
+        cout << "-----------------------------------------------" << endl;
     }
 
     return 0;
